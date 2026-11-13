@@ -1,0 +1,7 @@
+google-adk
+google-genai
+streamlit
+sqlparse
+mcp>=1.0.0
+litellm
+pandas
