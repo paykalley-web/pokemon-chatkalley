@@ -146,33 +146,10 @@ with st.sidebar:
     st.metric(label="Accumulated Prompt Tokens", value="1,200")
     st.metric(label="Accumulated Output Tokens", value="450")
 
-# Embedded Tabbed Interface with Explorer on the Left
-tab1, tab2 = st.tabs(["📂 Database Schema Explorer", "💬 AI Analyst Chat"])
+# Tab 1: AI Chat Bar, Tab 2: Pokemon Battle Compare File
+tab1, tab2 = st.tabs(["💬 AI Analyst Chat Bar", "⚔ Pokémon Battle Power Compare"])
 
 with tab1:
-    st.header("↗ Dynamic Database Schema Explorer")
-    st.markdown("Discover tables, fields, and master data configurations currently active in our secure layer:")
-    try:
-        conn = sqlite3.connect("file:enterprise.db?mode=ro", uri=True)
-        cur = conn.cursor()
-        tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
-
-        # Set default table to pokemon_balls to show the requested pokeball changes
-        default_index = tables.index("pokemon_balls") if "pokemon_balls" in tables else 0
-        selected_tab = st.selectbox("Select Live Table to Inspect Structure", tables, index=default_index, key="schema_table_select")
-        
-        if selected_tab:
-            cols = pd.read_sql_query(f"PRAGMA table_info({selected_tab});", conn)
-            st.dataframe(cols[["name", "type", "pk"]], use_container_width=True)
-
-            st.markdown(f"**Preview rows from `{selected_tab}`:**")
-            preview = pd.read_sql_query(f"SELECT * FROM {selected_tab} LIMIT 5;", conn)
-            st.dataframe(preview, use_container_width=True)
-        conn.close()
-    except Exception as e:
-        st.error(f"Schema error: {e}")
-
-with tab2:
     st.header("💬 Security-Enforced Chat Console")
     st.markdown("Ask questions about Pokemons, policies, or employee structures. Safety guardrails are built-in.")
 
@@ -214,3 +191,46 @@ with tab2:
                     st.session_state.messages.append({"role": "assistant", "content": ans_text})
                 except Exception as e:
                     st.error(f"Error generating response: {e}")
+
+with tab2:
+    st.header("⚔ Pokemon Battle Power Compare Tool")
+    st.markdown("Select two Pokémon to calculate their relative **Power Index** (HP + Attack) and perform a direct comparison.")
+
+    try:
+        conn = sqlite3.connect("file:enterprise.db?mode=ro", uri=True)
+        df_pkmn = pd.read_sql_query("SELECT id, name, type1, type2, hp, attack FROM pokemon_master ORDER BY name ASC;", conn)
+        conn.close()
+
+        # Safely determine indexes to avoid key errors
+        pkmn_list = df_pkmn["name"].tolist()
+        idx1 = pkmn_list.index("Charizard") if "Charizard" in pkmn_list else 0
+        idx2 = pkmn_list.index("Blastoise") if "Blastoise" in pkmn_list else min(1, len(pkmn_list) - 1)
+
+        p1 = st.selectbox("Select First Pokémon", pkmn_list, index=idx1, key="p1_battle_select")
+        p2 = st.selectbox("Select Second Pokémon", pkmn_list, index=idx2, key="p2_battle_select")
+
+        row1 = df_pkmn[df_pkmn["name"] == p1].iloc[0]
+        row2 = df_pkmn[df_pkmn["name"] == p2].iloc[0]
+
+        # Power Calculation Formula: HP + Attack
+        power1 = int(row1["hp"]) + int(row1["attack"])
+        power2 = int(row2["hp"]) + int(row2["attack"])
+
+        comp_data = {
+            "Stat": ["HP", "Attack", "Total Battle Power"],
+            p1: [row1["hp"], row1["attack"], power1],
+            p2: [row2["hp"], row2["attack"], power2]
+        }
+
+        df_comp = pd.DataFrame(comp_data)
+        st.table(df_comp)
+
+        if power1 > power2:
+            st.success(f"🏆 **{p1}** has higher total battle power than **{p2}** by **{power1 - power2}** points!")
+        elif power2 > power1:
+            st.success(f"🏆 **{p2}** has higher total battle power than **{p1}** by **{power2 - power1}** points!")
+        else:
+            st.info("🤝 Both Pokémon have equal battle power indexes!")
+
+    except Exception as e:
+        st.warning(f"Could not load comparison tool: {e}")
