@@ -2,10 +2,11 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import os
+from google import genai
 
 # Configure page style
 st.set_page_config(
-    page_title="Enterprise Analyst Dashboard",
+    page_title="Pokemon Battle Power Compare",
     page_icon="☑",
     layout="wide"
 )
@@ -63,6 +64,12 @@ def init_and_seed_db():
         boost_type TEXT NOT NULL,
         effect TEXT
     );
+    CREATE TABLE IF NOT EXISTS pokemon_balls (
+        ball_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ball_name TEXT UNIQUE NOT NULL,
+        catch_rate_multiplier REAL NOT NULL,
+        special_effect TEXT
+    );
     """)
 
     # Check and seed pokemon_master
@@ -96,6 +103,17 @@ def init_and_seed_db():
         (2, 'Blastoisinite', 'Water', 'Boosts defense and enables Mega Launcher ability.');
         """)
 
+    # Check and seed pokemon_balls
+    count_balls = cursor.execute("SELECT COUNT(*) FROM pokemon_balls;").fetchone()[0]
+    if count_balls == 0:
+        cursor.executescript("""
+        INSERT INTO pokemon_balls (ball_name, catch_rate_multiplier, special_effect) VALUES
+        ('Poke Ball', 1.0, 'Standard capturing device.'),
+        ('Great Ball', 1.5, 'Improved capture performance.'),
+        ('Ultra Ball', 2.0, 'High-performance capture device.'),
+        ('Master Ball', 255.0, 'Guaranteed capture on any wild encounter.');
+        """)
+
     conn.commit()
     conn.close()
 
@@ -103,7 +121,7 @@ def init_and_seed_db():
 init_and_seed_db()
 
 # =========================================================
-# 1. CORE LAYOUT AND WEB APP FUNCTIONALITY
+# 1. CORE LAYOUT AND WEB APP CONFIGURATION
 # =========================================================
 api_key = os.environ.get("GOOGLE_API_KEY", "")
 if not api_key:
@@ -113,8 +131,8 @@ if not api_key:
     except Exception:
         pass
 
-st.title("☑ Enterprise Intelligence Analyst Dashboard")
-st.markdown("### Live Database Schema Evolution, Comparison Suite, and Operational Telemetry")
+st.title("Pokemon Battle Power Compare")
+st.markdown("### Enterprise Multi-Domain Support & Interactive Query Console")
 
 with st.sidebar:
     st.header("☑ Security & Configuration")
@@ -128,62 +146,71 @@ with st.sidebar:
     st.metric(label="Accumulated Prompt Tokens", value="1,200")
     st.metric(label="Accumulated Output Tokens", value="450")
 
-col1, col2 = st.columns([1, 1])
+# Embedded Tabbed Interface with Explorer on the Left
+tab1, tab2 = st.tabs(["📂 Database Schema Explorer", "💬 AI Analyst Chat"])
 
-with col1:
-    st.header("| Pokemon Battle Power Compare")
-    st.markdown("Select two Pokemon to calculate their relative Power Index (HP + Attack) and perform a direct comparison.")
-
-    try:
-        conn = sqlite3.connect("file:enterprise.db?mode=ro", uri=True)
-        df_pkmn = pd.read_sql_query("SELECT id, name, type1, type2, hp, attack FROM pokemon_master ORDER BY name ASC;", conn)
-        conn.close()
-
-        p1 = st.selectbox("Select First Pokemon", df_pkmn["name"].tolist(), index=0)
-        p2 = st.selectbox("Select Second Pokemon", df_pkmn["name"].tolist(), index=min(1, len(df_pkmn)-1))
-
-        row1 = df_pkmn[df_pkmn["name"] == p1].iloc[0]
-        row2 = df_pkmn[df_pkmn["name"] == p2].iloc[0]
-
-        power1 = int(row1["hp"]) + int(row1["attack"])
-        power2 = int(row2["hp"]) + int(row2["attack"])
-
-        comp_data = {
-            "Stat": ["HP", "Attack", "Total Battle Power"],
-            p1: [row1["hp"], row1["attack"], power1],
-            p2: [row2["hp"], row2["attack"], power2]
-        }
-
-        df_comp = pd.DataFrame(comp_data)
-        st.table(df_comp)
-
-        if power1 > power2:
-            st.success(f"*** **{p1}** has higher total battle power than **{p2}** by **{power1 - power2}** points!")
-        elif power2 > power1:
-            st.success(f"*** **{p2}** has higher total battle power than **{p1}** by **{power2 - power1}** points!")
-        else:
-            st.info("\u2032 Both Pokemon have equal battle power indexes!")
-
-    except Exception as e:
-        st.warning(f"Could not load comparison tool: {e}")
-
-with col2:
+with tab1:
     st.header("↗ Dynamic Database Schema Explorer")
-    st.markdown("Discover what tables and fields are currently active in our secure MCP layer:")
-
+    st.markdown("Discover tables, fields, and master data configurations currently active in our secure layer:")
     try:
         conn = sqlite3.connect("file:enterprise.db?mode=ro", uri=True)
         cur = conn.cursor()
         tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
 
-        selected_tab = st.selectbox("Select Live Table to Inspect Structure", tables)
+        # Set default table to pokemon_balls to show the requested pokeball changes
+        default_index = tables.index("pokemon_balls") if "pokemon_balls" in tables else 0
+        selected_tab = st.selectbox("Select Live Table to Inspect Structure", tables, index=default_index, key="schema_table_select")
+        
         if selected_tab:
             cols = pd.read_sql_query(f"PRAGMA table_info({selected_tab});", conn)
-            st.dataframe(cols[["name", "type", "pk"]])
+            st.dataframe(cols[["name", "type", "pk"]], use_container_width=True)
 
             st.markdown(f"**Preview rows from `{selected_tab}`:**")
             preview = pd.read_sql_query(f"SELECT * FROM {selected_tab} LIMIT 5;", conn)
-            st.dataframe(preview)
+            st.dataframe(preview, use_container_width=True)
         conn.close()
     except Exception as e:
         st.error(f"Schema error: {e}")
+
+with tab2:
+    st.header("💬 Security-Enforced Chat Console")
+    st.markdown("Ask questions about Pokemons, policies, or employee structures. Safety guardrails are built-in.")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Hi! I am your Enterprise Analyst Agent. How can I assist you with Pokemon stats, databases, or policies today?"}
+        ]
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if prompt := st.chat_input("Ask a question or request database information..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Process user query safely
+        with st.chat_message("assistant"):
+            if not api_key:
+                st.error("Gemini API Key is missing. Please configure it in your secret keys.")
+            else:
+                try:
+                    client = genai.Client(api_key=api_key)
+                    system_instruction = """
+                    You are a helpful analyst assistant. You answer questions strictly based on the enterprise.db.
+                    For safety, you only query read-only schemas.
+                    """
+
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt,
+                        config=genai.types.GenerateContentConfig(
+                            system_instruction=system_instruction
+                        )
+                    )
+                    ans_text = response.text
+                    st.markdown(ans_text)
+                    st.session_state.messages.append({"role": "assistant", "content": ans_text})
+                except Exception as e:
+                    st.error(f"Error generating response: {e}")
